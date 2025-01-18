@@ -1,0 +1,1093 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TB Cases Interactive Dashboard</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
+    <style>
+      :root {
+        --primary-color: #3498db;
+        --secondary-color: #2ecc71;
+        --background-color: #f4f6f9;
+        --card-background: white;
+        --text-color: #333;
+      }
+
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        font-family: "Inter", Arial, sans-serif;
+        line-height: 1.6;
+        background-color: var(--background-color);
+        color: var(--text-color);
+        padding: 20px;
+      }
+
+      .dashboard-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+        background-color: white;
+        padding: 15px;
+        border-radius: 8px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+      }
+
+      .dashboard-title {
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: var(--primary-color);
+      }
+
+      .filter-section {
+        display: flex;
+        gap: 15px;
+        align-items: center;
+      }
+
+      .filter-section label {
+        font-weight: 500;
+        margin-right: 10px;
+      }
+
+      select,
+      button {
+        padding: 8px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        background-color: white;
+        transition: all 0.3s ease;
+        cursor: pointer;
+      }
+
+      button {
+        background-color: var(--primary-color);
+        color: white;
+        border: none;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+      }
+
+      button:hover {
+        background-color: #2980b9;
+      }
+
+      .play-section {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .current-year-display {
+        font-weight: bold;
+        color: var(--primary-color);
+      }
+
+      .active-filter {
+        background-color: #3498db;
+        color: white;
+      }
+
+      select:hover {
+        border-color: var(--primary-color);
+      }
+
+      .dashboard-container {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .visualization-large {
+        grid-column: span 2;
+        width: 1000px;
+        background-color: var(--card-background);
+        border-radius: 12px;
+        box-shadow: 0 6px 12px rgba(0, 0, 0, 0.08);
+        padding: 20px;
+        transition: all 0.3s ease;
+      }
+
+      .visualization {
+        flex: 1;
+        width: auto;
+        background-color: var(--card-background);
+        border-radius: 12px;
+        box-shadow: 0 6px 12px rgba(0, 0, 0, 0.08);
+        padding: 20px;
+        transition: all 0.3s ease;
+      }
+
+      .visualization:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+      }
+
+      .visualization h3 {
+        color: var(--primary-color);
+        border-bottom: 2px solid var(--primary-color);
+        padding-bottom: 10px;
+        margin-bottom: 15px;
+        font-weight: 600;
+      }
+
+      .visualization-large h3 {
+        color: var(--primary-color);
+        border-bottom: 2px solid var(--primary-color);
+        padding-bottom: 10px;
+        margin-bottom: 15px;
+        font-weight: 600;
+      }
+
+      #tooltip {
+        position: absolute;
+        background: rgba(0, 0, 0, 0.8);
+        color: white;
+        padding: 10px;
+        border-radius: 6px;
+        pointer-events: none;
+        display: none;
+        z-index: 1000;
+      }
+
+      @media (max-width: 768px) {
+        .dashboard-container {
+          display: flex;
+          flex-direction: column;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="dashboard-header">
+      <div class="dashboard-title">Global Tuberculosis Cases Dashboard</div>
+      <div class="filter-section">
+        <div>
+          <label>Region:</label>
+          <select id="regionFilter">
+            <option value="">All Regions</option>
+          </select>
+        </div>
+        <div>
+          <label>Country:</label>
+          <select id="countryFilter">
+            <option value="">All Countries</option>
+          </select>
+        </div>
+        <div>
+          <label>Year:</label>
+          <select id="yearFilter">
+            <option value="">All Years</option>
+          </select>
+        </div>
+        <div class="play-section">
+          <button id="playTimeline">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <polygon points="5 3 19 12 5 21 5 3"></polygon>
+            </svg>
+            Play
+          </button>
+          <span id="currentYearDisplay" class="current-year-display"></span>
+        </div>
+      </div>
+    </div>
+
+    <div id="tooltip"></div>
+
+    <div class="dashboard-container">
+      <div class="visualization">
+        <h3>Geographic TB Distribution</h3>
+        <div id="map-chart"></div>
+      </div>
+      <div class="visualization">
+        <h3>TB Cases Hierarchy</h3>
+        <div id="sunburst"></div>
+      </div>
+      <div class="visualization-large">
+        <h3>TB Cases Network</h3>
+        <div id="force-graph"></div>
+      </div>
+      <div class="visualization">
+        <h3>TB Cases Timeline</h3>
+        <div id="timeline"></div>
+      </div>
+      <div class="visualization">
+        <h3>TB Cases by Region</h3>
+        <div id="tree-map"></div>
+      </div>
+    </div>
+
+    <script>
+      // Global state for filtering and persistence
+      const dashboardState = {
+        activeFilters: {},
+        savedSettings: {},
+        isPlaying: false,
+        playInterval: null,
+      };
+
+      let globalData = [];
+      let minYear, maxYear;
+
+      function loadData() {
+        d3.csv("TB_cleaned_dataset2.csv").then((data) => {
+          globalData = data;
+
+          // Determine min and max years dynamically
+          const years = [...new Set(data.map((d) => d.year))].map(Number);
+          minYear = Math.min(...years);
+          maxYear = Math.max(...years);
+
+          populateFilters(data);
+          updateVisualizations(data);
+
+          // Setup play timeline functionality
+          setupTimelinePlay();
+          setupCrossFiltering();
+        });
+      }
+
+      function setupTimelinePlay() {
+        const playButton = document.getElementById("playTimeline");
+        const yearDisplay = document.getElementById("currentYearDisplay");
+
+        playButton.addEventListener("click", () => {
+          if (dashboardState.isPlaying) {
+            stopTimelinePlay();
+          } else {
+            startTimelinePlay();
+          }
+        });
+
+        function startTimelinePlay() {
+          dashboardState.isPlaying = true;
+          playButton.innerHTML = `
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="6" y="4" width="4" height="16"></rect>
+                <rect x="14" y="4" width="4" height="16"></rect>
+              </svg>
+              Stop
+            `;
+
+          let currentYear = minYear;
+          yearDisplay.textContent = `Year: ${currentYear}`;
+
+          dashboardState.playInterval = setInterval(() => {
+            const yearFilter = document.getElementById("yearFilter");
+            yearFilter.value = currentYear.toString();
+            filterData();
+
+            currentYear++;
+            yearDisplay.textContent = `Year: ${currentYear}`;
+
+            if (currentYear > maxYear) {
+              stopTimelinePlay();
+            }
+          }, 1000); // Change visualization every second
+        }
+
+        function stopTimelinePlay() {
+          dashboardState.isPlaying = false;
+          playButton.innerHTML = `
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+              </svg>
+              Play
+            `;
+
+          if (dashboardState.playInterval) {
+            clearInterval(dashboardState.playInterval);
+          }
+        }
+      }
+
+      function setupCrossFiltering() {
+        // Add click event listeners to visualizations for cross-filtering
+        const visualizations = [
+          { id: "#map-chart", type: "map" },
+          { id: "#sunburst", type: "sunburst" },
+          { id: "#force-graph", type: "force-graph" },
+          { id: "#tree-map", type: "tree-map" },
+        ];
+
+        visualizations.forEach((viz) => {
+          d3.select(viz.id).on("click", function (event) {
+            const target = d3.select(event.target);
+
+            // Determine the filter based on visualization type
+            let filterValue, filterType;
+
+            switch (viz.type) {
+              case "map":
+                if (target.node().tagName === "path") {
+                  const countryName = target.datum()?.properties?.name;
+                  if (countryName) {
+                    filterValue = countryName;
+                    filterType = "country";
+                  }
+                }
+                break;
+
+              case "sunburst":
+                if (target.node().tagName === "path") {
+                  const nodeData = target.datum()?.data;
+                  if (nodeData) {
+                    if (nodeData.depth === 1) {
+                      filterValue = nodeData.name;
+                      filterType = "region";
+                    } else if (nodeData.depth === 2) {
+                      filterValue = nodeData.name;
+                      filterType = "country";
+                    }
+                  }
+                }
+                break;
+
+              case "force-graph":
+                if (target.node().tagName === "circle") {
+                  const nodeData = target.datum();
+                  if (nodeData) {
+                    filterValue = nodeData.id;
+                    filterType =
+                      nodeData.type === "region" ? "region" : "country";
+                  }
+                }
+                break;
+
+              case "tree-map":
+                if (
+                  target.node().tagName === "rect" ||
+                  target.node().tagName === "text"
+                ) {
+                  const nodeData = target.datum()?.data;
+                  if (nodeData) {
+                    filterValue = nodeData.name;
+                    filterType =
+                      target.datum().parent.data.name === "TB Cases"
+                        ? "region"
+                        : "country";
+                  }
+                }
+                break;
+            }
+
+            // Apply filter if a valid value is found
+            if (filterValue) {
+              // Update dashboard state and UI
+              if (filterType === "region") {
+                document.getElementById("regionFilter").value = filterValue;
+                dashboardState.activeFilters.region = filterValue;
+                dashboardState.activeFilters.country = ""; // Reset country when region is selected
+              } else if (filterType === "country") {
+                document.getElementById("countryFilter").value = filterValue;
+                dashboardState.activeFilters.country = filterValue;
+                // Find and set the corresponding region
+                const countryRegion = globalData.find(
+                  (d) => d.country === filterValue
+                )?.g_whoregion;
+                if (countryRegion) {
+                  document.getElementById("regionFilter").value = countryRegion;
+                  dashboardState.activeFilters.region = countryRegion;
+                }
+              }
+
+              // Trigger filtering
+              filterData();
+            }
+          });
+        });
+      }
+
+      function populateFilters(data) {
+        const regionFilter = document.getElementById("regionFilter");
+        const countryFilter = document.getElementById("countryFilter");
+        const yearFilter = document.getElementById("yearFilter");
+
+        const uniqueRegions = [...new Set(data.map((d) => d.g_whoregion))];
+        const uniqueCountries = [...new Set(data.map((d) => d.country))].sort();
+        const uniqueYears = [...new Set(data.map((d) => d.year))].sort();
+
+        // Populate region filter
+        uniqueRegions.forEach((region) => {
+          const option = document.createElement("option");
+          option.value = region;
+          option.textContent = region;
+          regionFilter.appendChild(option);
+        });
+
+        // Populate country filter
+        uniqueCountries.forEach((country) => {
+          const option = document.createElement("option");
+          option.value = country;
+          option.textContent = country;
+          countryFilter.appendChild(option);
+        });
+
+        // Populate year filter
+        uniqueYears.forEach((year) => {
+          const option = document.createElement("option");
+          option.value = year;
+          option.textContent = year;
+          yearFilter.appendChild(option);
+        });
+
+        // Add event listeners for filters
+        regionFilter.addEventListener("change", filterData);
+        countryFilter.addEventListener("change", filterData);
+        yearFilter.addEventListener("change", filterData);
+      }
+
+      function filterData() {
+        // Get current filter values
+        const regionFilter = document.getElementById("regionFilter").value;
+        const countryFilter = document.getElementById("countryFilter").value;
+        const yearFilter = document.getElementById("yearFilter").value;
+
+        // Update dashboard state
+        dashboardState.activeFilters = {
+          region: regionFilter,
+          country: countryFilter,
+          year: yearFilter,
+        };
+
+        // Filter data based on selected filters
+        const filteredData = globalData.filter(
+          (d) =>
+            (!regionFilter || d.g_whoregion === regionFilter) &&
+            (!countryFilter || d.country === countryFilter) &&
+            (!yearFilter || d.year === yearFilter)
+        );
+
+        // Update visualizations
+        updateVisualizations(filteredData);
+      }
+
+      function updateVisualizations(data) {
+        d3.selectAll("#map-chart svg").remove();
+        d3.selectAll("#sunburst svg").remove();
+        d3.selectAll("#force-graph svg").remove();
+        d3.selectAll("#timeline svg").remove();
+        d3.selectAll("#tree-map svg").remove();
+
+        createMapChart(data);
+        createSunburstChart(data);
+        createForceDirectedGraph(data);
+        createTimelineVisualization(data);
+        createTreeMap(data);
+      }
+
+      // Utility function for color generation
+      function generateColors(count) {
+        const colors = [
+          "#FF6B6B",
+          "#4ECDC4",
+          "#45B7D1",
+          "#FDCB6E",
+          "#6C5CE7",
+          "#A8E6CF",
+          "#FF8ED4",
+          "#FAD390",
+        ];
+        return colors.slice(0, count);
+      }
+
+      function saveDashboardState() {
+        localStorage.setItem("dashboardState", JSON.stringify(dashboardState));
+      }
+
+      function loadDashboardState() {
+        const savedState = localStorage.getItem("dashboardState");
+        if (savedState) {
+          Object.assign(dashboardState, JSON.parse(savedState));
+        }
+      }
+
+      // Enhanced Map Chart Visualization
+      function createMapChart(data) {
+        const width = 600,
+          height = 400;
+
+        // Create SVG
+        const svg = d3
+          .select("#map-chart")
+          .append("svg")
+          .attr("width", width)
+          .attr("height", height);
+
+        const tooltip = d3.select("#tooltip");
+
+        const projection = d3
+          .geoMercator()
+          .scale(150)
+          .translate([width / 2, height / 2]);
+
+        const path = d3.geoPath().projection(projection);
+
+        // Load world map data
+        d3.json(
+          "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json"
+        ).then((worldData) => {
+          // Draw countries
+          svg
+            .append("g")
+            .selectAll("path")
+            .data(
+              topojson.feature(worldData, worldData.objects.countries).features
+            )
+            .enter()
+            .append("path")
+            .attr("d", path)
+            .attr("fill", "#E0E0E0")
+            .attr("stroke", "#FFFFFF")
+            .attr("stroke-width", 0.5);
+
+          // Map data to countries
+          const maxCases = d3.max(data, (d) => +d.tot_newrel || 0);
+          const colorScale = d3
+            .scaleSequential(d3.interpolateReds)
+            .domain([0, maxCases]);
+
+          svg
+            .append("g")
+            .selectAll("path")
+            .data(
+              topojson.feature(worldData, worldData.objects.countries).features
+            )
+            .enter()
+            .append("path")
+            .attr("d", path)
+            .attr("fill", (d) => {
+              const countryData = data.find(
+                (dataPoint) => dataPoint.country === d.properties.name
+              );
+              return countryData
+                ? colorScale(+countryData.tot_newrel || 0)
+                : "#E0E0E0"; // Default to light gray for countries with no data
+            })
+            .attr("stroke", "#FFFFFF")
+            .attr("stroke-width", 0.5)
+            .on("mouseover", function (event, d) {
+              const countryData = data.find(
+                (dataPoint) => dataPoint.country === d.properties.name
+              );
+              d3.select(this).attr("opacity", 1);
+              tooltip
+                .style("display", "block")
+                .html(
+                  `
+              <strong>${d.properties.name}</strong><br>
+              Region: ${countryData ? countryData.g_whoregion : "N/A"}<br>
+              Total Cases: ${
+                countryData
+                  ? (+countryData.tot_newrel || 0).toLocaleString()
+                  : "N/A"
+              }
+            `
+                )
+                .style("left", event.pageX + 10 + "px")
+                .style("top", event.pageY - 10 + "px");
+            })
+            .on("mouseout", function () {
+              d3.select(this).attr("opacity", 0.8);
+              tooltip.style("display", "none");
+            });
+
+          // Zoom functionality
+          const zoom = d3
+            .zoom()
+            .scaleExtent([1, 8])
+            .on("zoom", (event) => {
+              svg.selectAll("path").attr("transform", event.transform);
+            });
+
+          svg.call(zoom);
+
+          // Legend
+          const legendWidth = 300;
+          const legendHeight = 20;
+
+          const legend = svg
+            .append("g")
+            .attr(
+              "transform",
+              `translate(${width - legendWidth - 20},${height - 60})`
+            );
+
+          const legendScale = d3
+            .scaleLinear()
+            .domain([0, maxCases])
+            .range([0, legendWidth]);
+
+          const gradient = legend
+            .append("defs")
+            .append("linearGradient")
+            .attr("id", "gradient")
+            .attr("x1", "0%")
+            .attr("x2", "100%")
+            .attr("y1", "0%")
+            .attr("y2", "0%");
+
+          gradient
+            .append("stop")
+            .attr("offset", "0%")
+            .attr("stop-color", "#FFEBEB"); // Light red
+          gradient
+            .append("stop")
+            .attr("offset", "100%")
+            .attr("stop-color", "#B20000"); // Dark red
+
+          legend
+            .append("rect")
+            .attr("width", legendWidth)
+            .attr("height", legendHeight)
+            .style("fill", "url(#gradient)");
+
+          // Legend axis
+          const axis = d3
+            .axisBottom(legendScale)
+            .ticks(5)
+            .tickFormat(d3.format(".0s"));
+
+          legend
+            .append("g")
+            .attr("transform", `translate(0,${legendHeight})`)
+            .call(axis);
+        });
+      }
+
+      // Sunburst Chart Visualization
+      function createSunburstChart(data) {
+        const width = 350,
+          height = 350;
+        const radius = Math.min(width, height) / 2;
+
+        const svg = d3
+          .select("#sunburst")
+          .append("svg")
+          .attr("width", width)
+          .attr("height", height)
+          .append("g")
+          .attr("transform", `translate(${width / 2},${height / 2})`);
+
+        // Hierarchical data preparation
+        const hierarchyData = d3.rollup(
+          data,
+          (v) => d3.sum(v, (d) => +d.tot_newrel),
+          (d) => d.g_whoregion,
+          (d) => d.country
+        );
+
+        const root = d3
+          .hierarchy({
+            name: "TB Cases",
+            children: Array.from(hierarchyData, ([region, countries]) => ({
+              name: region,
+              children: Array.from(countries, ([country, value]) => ({
+                name: country,
+                value: value,
+              })),
+            })),
+          })
+          .sum((d) => d.value || 0);
+
+        const color = d3.scaleOrdinal(d3.schemeCategory10);
+
+        const partition = d3.partition().size([2 * Math.PI, radius]);
+
+        partition(root);
+
+        const arc = d3
+          .arc()
+          .startAngle((d) => d.x0)
+          .endAngle((d) => d.x1)
+          .innerRadius((d) => d.y0)
+          .outerRadius((d) => d.y1);
+
+        svg
+          .selectAll("path")
+          .data(root.descendants())
+          .enter()
+          .append("path")
+          .attr("display", (d) => (d.depth ? null : "none"))
+          .attr("d", arc)
+          .style("stroke", "#fff")
+          .style("fill", (d) => color((d.children ? d : d.parent).data.name))
+          .on("mouseover", function (event, d) {
+            d3.select("#tooltip")
+              .style("display", "block")
+              .html(
+                `
+                              <strong>${d.data.name}</strong><br>
+                              Cases: ${d.value.toLocaleString()}<br>
+                              Depth: ${d.depth}
+                          `
+              )
+              .style("left", event.pageX + 10 + "px")
+              .style("top", event.pageY - 10 + "px");
+          })
+          .on("mouseout", () => {
+            d3.select("#tooltip").style("display", "none");
+          })
+          .on("click", function (event, d) {
+            svg
+              .transition()
+              .duration(750)
+              .tween("scale", () => {
+                const xd = d3.interpolate(arc.startAngle()(), d.x0);
+                const yd = d3.interpolate(arc.endAngle()(), d.x1);
+                const yr = d3.interpolate(arc.innerRadius()(), d.y0);
+                const yR = d3.interpolate(arc.outerRadius()(), d.y1);
+                return (t) => {
+                  d3.select(this).attr(
+                    "d",
+                    arc
+                      .startAngle(xd(t))
+                      .endAngle(yd(t))
+                      .innerRadius(yr(t))
+                      .outerRadius(yR(t))
+                  );
+                };
+              });
+          });
+      }
+      function createForceDirectedGraph(data) {
+        const width = 1000,
+          height = 1000;
+
+        const svg = d3
+          .select("#force-graph")
+          .append("svg")
+          .attr("width", width)
+          .attr("height", height);
+
+        // Tooltip creation
+        const tooltip = d3
+          .select("body")
+          .append("div")
+          .attr("class", "tooltip")
+          .style("position", "absolute")
+          .style("visibility", "hidden")
+          .style("background-color", "rgba(0, 0, 0, 0.7)")
+          .style("color", "white")
+          .style("padding", "8px")
+          .style("border-radius", "5px")
+          .style("font-size", "12px");
+
+        // Preprocess data to create nodes
+        const regionNodes = [...new Set(data.map((d) => d.g_whoregion))].map(
+          (region) => ({
+            id: region,
+            type: "region",
+          })
+        );
+
+        const countryNodes = [...new Set(data.map((d) => d.country))].map(
+          (country) => ({
+            id: country,
+            type: "country",
+          })
+        );
+
+        const nodes = [...regionNodes, ...countryNodes];
+
+        // Create links
+        const links = data.map((d) => ({
+          source: d.country,
+          target: d.g_whoregion,
+          value: +d.tot_newrel,
+        }));
+
+        // Color scale for different node types
+        const colorScale = d3
+          .scaleOrdinal()
+          .domain(["region", "country"])
+          .range(["#FF6B6B", "#4ECDC4"]);
+
+        const simulation = d3
+          .forceSimulation(nodes)
+          .force(
+            "link",
+            d3
+              .forceLink(links)
+              .id((d) => d.id)
+              .distance(100)
+          )
+          .force("charge", d3.forceManyBody().strength(-50))
+          .force("center", d3.forceCenter(width / 2, height / 2));
+
+        const link = svg
+          .append("g")
+          .selectAll("line")
+          .data(links)
+          .enter()
+          .append("line")
+          .attr("stroke", "#aaa")
+          .attr("stroke-opacity", 0.2)
+          .attr("stroke-width", 1)
+          .on("mouseover", function (event, d) {
+            d3.select(this).attr("stroke-opacity", 0.7); // Highlight the link on hover
+            tooltip
+              .style("visibility", "visible")
+              .html(`<strong>Value:</strong> ${d.value}`)
+              .style("left", event.pageX + 10 + "px")
+              .style("top", event.pageY - 30 + "px");
+          })
+          .on("mouseout", function () {
+            d3.select(this).attr("stroke-opacity", 0.2); // Reset link opacity
+            tooltip.style("visibility", "hidden");
+          });
+
+        const node = svg
+          .append("g")
+          .selectAll("circle")
+          .data(nodes)
+          .enter()
+          .append("circle")
+          .attr("r", (d) => (d.type === "region" ? 10 : 4))
+          .attr("fill", (d) => colorScale(d.type))
+          .call(
+            d3
+              .drag()
+              .on("start", dragstarted)
+              .on("drag", dragged)
+              .on("end", dragended)
+          );
+
+        // Add labels
+        const labels = svg
+          .append("g")
+          .selectAll("text")
+          .data(nodes)
+          .enter()
+          .append("text")
+          .text((d) => d.id)
+          .attr("font-size", 10)
+          .attr("dx", 12)
+          .attr("dy", 4);
+
+        simulation.on("tick", () => {
+          link
+            .attr("x1", (d) => d.source.x)
+            .attr("y1", (d) => d.source.y)
+            .attr("x2", (d) => d.target.x)
+            .attr("y2", (d) => d.target.y);
+
+          node.attr("cx", (d) => d.x).attr("cy", (d) => d.y);
+
+          labels.attr("x", (d) => d.x).attr("y", (d) => d.y);
+        });
+
+        function dragstarted(event, d) {
+          if (!event.active) simulation.alphaTarget(0.3).restart();
+          d.fx = d.x;
+          d.fy = d.y;
+        }
+
+        function dragged(event, d) {
+          d.fx = event.x;
+          d.fy = event.y;
+        }
+
+        function dragended(event, d) {
+          if (!event.active) simulation.alphaTarget(0);
+          d.fx = null;
+          d.fy = null;
+        }
+      }
+
+      function createTimelineVisualization(data) {
+        const width = 450,
+          height = 300;
+        const margin = { top: 20, right: 20, bottom: 40, left: 40 };
+
+        const svg = d3
+          .select("#timeline")
+          .append("svg")
+          .attr("width", width + margin.left + margin.right)
+          .attr("height", height + margin.top + margin.bottom)
+          .append("g")
+          .attr("transform", `translate(${margin.left},${margin.top})`);
+
+        // Group data by year and calculate total new cases
+        const groupedData = d3.group(data, (d) => d.year);
+        const yearlyData = Array.from(groupedData, ([year, values]) => ({
+          year: +year,
+          total_cases: d3.sum(values, (d) => +d.tot_newrel),
+        })).sort((a, b) => a.year - b.year);
+
+        const x = d3
+          .scaleLinear()
+          .domain(d3.extent(yearlyData, (d) => d.year))
+          .range([0, width]);
+
+        const y = d3
+          .scaleLinear()
+          .domain([0, d3.max(yearlyData, (d) => d.total_cases)])
+          .range([height, 0]);
+
+        // Create line generator
+        const line = d3
+          .line()
+          .x((d) => x(d.year))
+          .y((d) => y(d.total_cases));
+
+        // Add x-axis
+        svg
+          .append("g")
+          .attr("transform", `translate(0,${height})`)
+          .call(d3.axisBottom(x).tickFormat(d3.format("d")));
+
+        // Add y-axis
+        svg.append("g").call(d3.axisLeft(y));
+
+        // Add line path
+        svg
+          .append("path")
+          .datum(yearlyData)
+          .attr("fill", "none")
+          .attr("stroke", "steelblue")
+          .attr("stroke-width", 2)
+          .attr("d", line);
+
+        // Add circles for each data point
+        svg
+          .selectAll("circle")
+          .data(yearlyData)
+          .enter()
+          .append("circle")
+          .attr("cx", (d) => x(d.year))
+          .attr("cy", (d) => y(d.total_cases))
+          .attr("r", 5)
+          .attr("fill", "steelblue")
+          .on("mouseover", function (event, d) {
+            d3.select("#tooltip")
+              .style("display", "block")
+              .html(
+                `Year: ${
+                  d.year
+                }<br>Total Cases: ${d.total_cases.toLocaleString()}`
+              )
+              .style("left", event.pageX + 10 + "px")
+              .style("top", event.pageY - 10 + "px");
+          })
+          .on("mouseout", () => {
+            d3.select("#tooltip").style("display", "none");
+          });
+      }
+
+      function createTreeMap(data) {
+        const width = 600,
+          height = 450;
+
+        const hierarchyData = {
+          name: "TB Cases",
+          children: Array.from(
+            d3.group(data, (d) => d.g_whoregion).entries(),
+            ([region, values]) => ({
+              name: region,
+              children: Array.from(
+                d3.group(values, (d) => d.country).entries(),
+                ([country, cases]) => ({
+                  name: country,
+                  value: d3.sum(cases, (d) => +d.tot_newrel || 0),
+                })
+              ),
+            })
+          ),
+        };
+
+        const root = d3.hierarchy(hierarchyData).sum((d) => d.value || 0);
+        const treemapLayout = d3.treemap().size([width, height]).padding(2);
+        treemapLayout(root);
+
+        const svg = d3
+          .select("#tree-map")
+          .append("svg")
+          .attr("width", width)
+          .attr("height", height);
+
+        const colorScale = d3.scaleOrdinal(d3.schemeCategory10);
+
+        const cell = svg
+          .selectAll("g")
+          .data(root.leaves())
+          .enter()
+          .append("g")
+          .attr("transform", (d) => `translate(${d.x0},${d.y0})`);
+
+        cell
+          .append("rect")
+          .attr("width", (d) => d.x1 - d.x0)
+          .attr("height", (d) => d.y1 - d.y0)
+          .attr("fill", (d) => colorScale(d.parent.data.name));
+
+        cell
+          .append("text")
+          .attr("x", 5)
+          .attr("y", 15)
+          .text((d) => `${d.data.name}: ${d.value.toLocaleString()}`)
+          .attr("font-size", "10px")
+          .attr("fill", "white");
+
+        cell
+          .on("mouseover", function (event, d) {
+            d3.select(this).select("rect").attr("opacity", 0.8);
+            d3.select("#tooltip")
+              .style("display", "block")
+              .html(
+                `
+                  <strong>${d.data.name}</strong><br>
+                  Total Cases: ${d.value.toLocaleString()}<br>
+                  Parent Region: ${d.parent.data.name}
+                `
+              )
+              .style("left", event.pageX + "px")
+              .style("top", event.pageY + "px");
+          })
+          .on("mouseout", function () {
+            d3.select(this).select("rect").attr("opacity", 1);
+            d3.select("#tooltip").style("display", "none");
+          });
+      }
+
+      loadData();
+
+      function addExportFunctionality() {
+        document.getElementById("export-view").addEventListener("click", () => {
+          const svgElements = document.querySelectorAll("svg");
+          svgElements.forEach((svg) => {
+            const serializer = new XMLSerializer();
+            const svgBlob = new Blob([serializer.serializeToString(svg)], {
+              type: "image/svg+xml;charset=utf-8",
+            });
+            const url = URL.createObjectURL(svgBlob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = "dashboard-view.svg";
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+          });
+        });
+      }
+    </script>
+  </body>
+</html>
